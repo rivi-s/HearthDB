@@ -415,5 +415,8 @@ cargo build --release --target i686-pc-windows-msvc
 
 The separately installed [pfQuest-HDB Hitch Profiler](diagnostics/pfQuest-HDB-HitchProfiler/README.md)
 is maintained under diagnostics/. Download its ZIP from the experimental release
-assets. Profiler 1.0.2 defaults login capture to OFF and preserves saved per-character `/hdbhitch login on` and
+assets. Profiler 1.0.3 defaults login capture to OFF and preserves saved per-character `/hdbhitch login on` and
 `/hdbhitch login off` settings. It is not required for the DLL or normal play.
+
+Manual captures can export a separate `Imports/hdb_hitch_manual.txt` through the
+client ExportFile API; see the profiler README for limits and commands.

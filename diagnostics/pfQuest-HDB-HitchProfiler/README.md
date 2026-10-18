@@ -1,4 +1,4 @@
-# Optional pfQuest-HDB Hitch Profiler 1.0.2
+# Optional pfQuest-HDB Hitch Profiler 1.0.3
 
 This is a diagnostic addon, not a DLL or replacement pfQuest installation.
 It updates the older profiler supplied with previous install repositories.
@@ -16,7 +16,7 @@ a renamed folder. Run /reload, or restart when also changing a DLL.
 ## Capture login
 Login capture is off by default. Run /hdbhitch login on, then /reload or log in
 again to capture 45 seconds after entering the world. Send the chat
-output, including the 'profiler 1.0.2' line if available. With the experimental
+output, including the 'profiler 1.0.3' line if available. With the experimental
 DLL it also requests Logs/hdb_delivery_exp3.log at capture end.
 
 ## Capture a random hitch or quest completion
@@ -44,3 +44,11 @@ preserved; use /hdbhitch login off to disable a previously enabled setting.
 Manual /hdbhitch on and /hdbhitch off remain independent; disabling automatic
 login capture does not stop a manually started capture. /hdbhitch status shows
 both current capture state and the saved login setting.
+
+## Manual capture file
+With the client ExportFile API (Nampower), /hdbhitch on starts a separate
+Imports/hdb_hitch_manual.txt file. It contains the latest 2000 diagnostic lines,
+exports every 30 seconds, and exports again on /hdbhitch off or logout. Each new
+manual capture replaces the previous file; copy it before starting another.
+This does not overwrite Logs/hdb_delivery_exp3.log. Without ExportFile, chat
+capture still works. Login capture remains off by default.

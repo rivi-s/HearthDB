@@ -23,12 +23,34 @@ local function NowMS()
   return GetTime() * 1000
 end
 
+-- Manual captures use a bounded ring and infrequent exports to limit profiler overhead.
+local manualLog, manualCount, manualNext, manualExportAt
+local function LogManual(message)
+  if not manualLog then return end
+  manualLog[manualNext] = string.format("%.3f %s", GetTime(), message)
+  manualNext = math.mod(manualNext, 2000) + 1
+  manualCount = math.min(manualCount + 1, 2000)
+end
+local function ExportManual()
+  if not manualLog or type(ExportFile) ~= "function" then return end
+  local lines = { "HDB hitch manual capture (latest 2000 lines; timestamps are session seconds)" }
+  local first = manualCount < 2000 and 1 or manualNext
+  for offset = 0, manualCount - 1 do
+    table.insert(lines, manualLog[math.mod(first + offset - 1, 2000) + 1])
+  end
+  local ok = pcall(ExportFile, "hdb_hitch_manual", table.concat(lines, "\n"))
+  manualExportAt = GetTime() + 30
+  return ok
+end
+
 local function Print(message)
   if not enabled then return end
+  LogManual("HDB hitch: " .. message)
   DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccHDB hitch:|r " .. message)
 end
 
 local function Status(message)
+  LogManual("HDB hitch profiler: " .. message)
   DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccHDB hitch profiler:|r " .. message)
 end
 
@@ -483,13 +505,17 @@ end
 
 local questEvents = CreateFrame("Frame", "pfQuestHDBHitchProfilerEvents")
 questEvents:RegisterEvent("PLAYER_LOGIN")
+questEvents:RegisterEvent("PLAYER_LOGOUT")
 questEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
 questEvents:RegisterEvent("QUEST_COMPLETE")
 questEvents:RegisterEvent("QUEST_FINISHED")
 questEvents:RegisterEvent("QUEST_LOG_UPDATE")
 questEvents:SetScript("OnEvent", function()
+  if event == "PLAYER_LOGOUT" then ExportManual() end
   if event == "PLAYER_LOGIN" then Settings() end
   if event == "PLAYER_ENTERING_WORLD" and Settings().loginCapture then
+    ExportManual()
+    manualLog = nil
     enabled = true
     captureEnteredAt, firstArrowReported = GetTime(), nil
     firstTargetRequests, firstScanReported, firstIdentityReported = {}, nil, nil
@@ -499,7 +525,7 @@ questEvents:SetScript("OnEvent", function()
     loginCaptureUntil = GetTime() + 45
     lastSlowFrame = 0
     previousMemory = gcinfo()
-    Status("profiler 1.0.2: automatic login capture ON for 45 seconds")
+    Status("profiler 1.0.3: automatic login capture ON for 45 seconds")
     if type(HDB_GetDeliveryStats) == "function" then
       local version = HDB_GetDeliveryStats()
       Status("native delivery version: " .. tostring(version))
@@ -510,6 +536,7 @@ questEvents:SetScript("OnEvent", function()
 end)
 
 frame:SetScript("OnUpdate", function()
+  if manualLog and GetTime() >= manualExportAt then ExportManual() end
   if not enabled then return end
   AttachStartupWorkers()
   lastLuaBoundary = NowMS()
@@ -596,11 +623,18 @@ SlashCmdList["HDBHITCH"] = function(message)
     lastQuestEvent = nil
     previousMemory = gcinfo()
     loginCaptureUntil = nil
-    Status("ON")
+    if not manualLog then
+      manualLog, manualCount, manualNext, manualExportAt = {}, 0, 1, GetTime() + 30
+    end
+    Status("ON; manual log: Imports/hdb_hitch_manual.txt (requires ExportFile)")
+    ExportManual()
   elseif message == "off" or message == "" then
     enabled = false
     loginCaptureUntil = nil
     Status("OFF")
+    local saved = ExportManual()
+    manualLog = nil
+    if saved then Status("manual log saved: Imports/hdb_hitch_manual.txt") end
   elseif message == "status" then
     Status("capture=" .. (enabled and "ON" or "OFF") .. "; login=" .. (Settings().loginCapture and "ON" or "OFF"))
   else
