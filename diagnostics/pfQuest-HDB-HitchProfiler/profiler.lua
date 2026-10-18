@@ -3,7 +3,7 @@ local enabled = false
 local loginCaptureUntil
 local function Settings()
   if type(pfQuestHDBHitchConfig) ~= "table" then pfQuestHDBHitchConfig = {} end
-  if pfQuestHDBHitchConfig.loginCapture == nil then pfQuestHDBHitchConfig.loginCapture = true end
+  if pfQuestHDBHitchConfig.loginCapture == nil then pfQuestHDBHitchConfig.loginCapture = false end
   return pfQuestHDBHitchConfig
 end
 local lastSlowFrame = 0
@@ -499,7 +499,7 @@ questEvents:SetScript("OnEvent", function()
     loginCaptureUntil = GetTime() + 45
     lastSlowFrame = 0
     previousMemory = gcinfo()
-    Status("profiler 1.0.1: automatic login capture ON for 45 seconds")
+    Status("profiler 1.0.2: automatic login capture ON for 45 seconds")
     if type(HDB_GetDeliveryStats) == "function" then
       local version = HDB_GetDeliveryStats()
       Status("native delivery version: " .. tostring(version))
