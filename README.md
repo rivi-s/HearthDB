@@ -1,5 +1,16 @@
 # HearthDB
 
+## Experimental fork
+
+This fork contains the optional **0.4.1-exp.3** delivery experiment used with
+pfQuest-HDB. It is not an official upstream stable release. Existing HearthDB
+DLLs remain supported by pfQuest-HDB through its paging fallback.
+
+See [EXPERIMENTAL.md](EXPERIMENTAL.md) for changes, validation, installation,
+rollback, and diagnostic details. The original project is
+[copypasteonly/HearthDB](https://github.com/copypasteonly/HearthDB).
+
+
 A TurtleWoW DLL plugin that gives addon and mod authors access to SQLite
 databases from Lua. It exposes a set of `HDB_*` globals for opening,
 querying, and closing databases, with both synchronous and asynchronous

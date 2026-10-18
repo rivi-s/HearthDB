@@ -158,3 +158,10 @@ pub unsafe fn register_lua_function(name: &str, func: *mut usize) {
         std::mem::transmute(offsets::FRAME_SCRIPT_REGISTER_FUNCTION);
     f(cs.as_ptr(), func);
 }
+
+/// Duplicates a stack value using the existing client Lua API offset.
+pub unsafe fn lua_pushvalue(l: LuaState, idx: i32) {
+    let f: unsafe extern "fastcall" fn(LuaState, i32) =
+        std::mem::transmute(offsets::LUA_PUSHVALUE);
+    f(l, idx);
+}

@@ -79,6 +79,8 @@ fn is_valid_handle_number(n: f64) -> bool {
 /// # Safety
 /// Must be called from the main thread where Lua state access is valid.
 pub unsafe fn reset_all() {
+    crate::delivery::cancel(None);
+    crate::delivery::reset_stats();
     {
         let mut handles = HANDLES.lock().unwrap();
         for (i, slot) in handles.iter_mut().enumerate() {
@@ -282,6 +284,8 @@ pub unsafe extern "fastcall" fn script_hdb_close(_l: LuaState) -> u32 {
         lua::lua_error(l, "HDB_Close: invalid or already-closed handle");
         return 0;
     }
+
+    crate::delivery::cancel(Some(h));
 
     // Release any pending callback refs for this handle
     let stale_refs = crate::async_worker::cancel_handle_callbacks(h);
@@ -746,62 +750,35 @@ pub unsafe extern "fastcall" fn script_hdb_get_result(_l: LuaState) -> u32 {
 // ---------------------------------------------------------------------------
 
 pub unsafe fn pump_callbacks() {
-    let ready = crate::async_worker::ready_callbacks();
-    if ready.is_empty() {
-        return;
-    }
+    crate::delivery::pump();
+}
 
+/// Experimental diagnostics: build, conversion slices, rows, callbacks,
+/// largest conversion slice in milliseconds, largest callback in milliseconds.
+pub unsafe extern "fastcall" fn script_hdb_delivery_stats(_l: LuaState) -> u32 {
     let l = lua::get_lua_state();
+    lua::lua_pushstring(l, env!("CARGO_PKG_VERSION"));
+    for value in crate::delivery::stats() { lua::lua_pushnumber(l, value); }
+    6
+}
 
-    for (_ticket, result, cb) in ready {
-        // Push the callback function from the Lua registry
-        lua::lua_rawgeti(l, lua::LUA_REGISTRYINDEX, cb.lua_ref);
-
-        // Push arguments and call based on result type
-        let nargs = match result {
-            crate::async_worker::AsyncResult::Execute { rows_affected } => {
-                lua::lua_pushnumber(l, rows_affected as f64);
-                lua::lua_pushnil(l);
-                2
-            }
-            crate::async_worker::AsyncResult::Query { ref rows } => {
-                push_query_rows(l, rows);
-                lua::lua_pushnil(l);
-                2
-            }
-            crate::async_worker::AsyncResult::QueryRaw { ref cols, ref rows } => {
-                push_query_raw_cols(l, cols);
-                push_query_raw_rows(l, rows);
-                lua::lua_pushnil(l);
-                3
-            }
-            crate::async_worker::AsyncResult::Error { ref message } => {
-                lua::lua_pushnil(l);
-                lua::lua_pushstring(l, message);
-                2
-            }
-        };
-
-        // Protected call
-        let pcall_result = lua::lua_pcall(l, nargs, 0, 0);
-
-        if pcall_result != 0 {
-            // pcall failed; read the error, log it, and pop it
-            let err = lua::lua_tostring(l, -1)
-                .unwrap_or_else(|| "(non-string error)".to_string());
-            lua::lua_settop(l, lua::lua_gettop(l) - 1);
-            let msg = format!("HDB_Pump: callback error (ticket {}): {}\n", _ticket, err);
-            let _ = std::fs::create_dir("Logs");
-            let _ = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open("Logs/hdb_pump_errors.log")
-                .and_then(|mut f| std::io::Write::write_all(&mut f, msg.as_bytes()));
-        }
-
-        // Release the callback reference
-        lua::lual_unref(l, lua::LUA_REGISTRYINDEX, cb.lua_ref);
+/// Capture gcinfo through a protected Lua call, without guessing GC offsets.
+pub unsafe extern "fastcall" fn script_hdb_delivery_probe(_l: LuaState) -> u32 {
+    let l = lua::get_lua_state();
+    if lua::lua_gettop(l) == 1 && lua::lua_isfunction(l, 1) {
+        lua::lua_pushvalue(l, 1);
+        crate::delivery::set_probe(lua::lual_ref(l, lua::LUA_REGISTRYINDEX));
     }
+    0
+}
+pub unsafe extern "fastcall" fn script_hdb_delivery_dump(_l: LuaState) -> u32 {
+    let report = crate::delivery::diagnostics();
+    let _ = std::fs::create_dir("Logs");
+    let path = "Logs/hdb_delivery_exp3.log";
+    let result = std::fs::write(path, report).map(|_|path.to_string())
+        .unwrap_or_else(|e|format!("could not write delivery log: {}",e));
+    lua::lua_pushstring(lua::get_lua_state(), &result);
+    1
 }
 
 pub unsafe extern "fastcall" fn script_hdb_pump(_l: LuaState) -> u32 {

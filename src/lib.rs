@@ -3,6 +3,8 @@
 mod async_worker;
 mod compat;
 mod db;
+mod delivery;
+mod trace;
 mod lua;
 mod offsets;
 
@@ -29,10 +31,13 @@ unsafe fn register_hdb_functions() {
     lua::register_lua_function("HDB_QueryRawAsync",  db::script_hdb_query_raw_async as *mut usize);
     lua::register_lua_function("HDB_GetResult",      db::script_hdb_get_result      as *mut usize);
     lua::register_lua_function("HDB_ClearPoison",   db::script_hdb_clear_poison    as *mut usize);
+    lua::register_lua_function("HDB_SetDeliveryProbe", db::script_hdb_delivery_probe as *mut usize);
+    lua::register_lua_function("HDB_DumpDeliveryDiagnostics", db::script_hdb_delivery_dump as *mut usize);
+    lua::register_lua_function("HDB_GetDeliveryStats", db::script_hdb_delivery_stats as *mut usize);
     lua::register_lua_function("HDB_Pump",          db::script_hdb_pump            as *mut usize);
 
     lua::lua_call_string(
-        "CreateFrame('Frame', 'HDB_CallbackFrame'):SetScript('OnUpdate', HDB_Pump)",
+        "if gcinfo then HDB_SetDeliveryProbe(gcinfo) end; CreateFrame('Frame', 'HDB_CallbackFrame'):SetScript('OnUpdate', HDB_Pump)",
         "HearthDB",
     );
 }

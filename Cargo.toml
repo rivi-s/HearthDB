@@ -1,6 +1,6 @@
 [package]
 name    = "hearthdb"
-version = "0.4.1"
+version = "0.4.1-exp.3"
 edition = "2021"
 
 [lib]

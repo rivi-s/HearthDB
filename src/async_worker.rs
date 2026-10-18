@@ -144,6 +144,7 @@ fn execute_query_raw(
 
 fn worker_loop(rx: mpsc::Receiver<WorkItem>) {
     for item in rx {
+        crate::trace::worker(item.ticket);
         // Check if this handle is poisoned
         {
             let poisoned = POISONED.lock().unwrap();
@@ -154,6 +155,7 @@ fn worker_loop(rx: mpsc::Receiver<WorkItem>) {
                         item.handle_id
                     ),
                 };
+                crate::trace::ready(item.ticket, 0);
                 RESULTS.lock().unwrap().insert(item.ticket, result);
                 continue;
             }
@@ -161,8 +163,15 @@ fn worker_loop(rx: mpsc::Receiver<WorkItem>) {
 
         // Lock the per-connection mutex and run the operation
         let conn = item.conn.lock().unwrap();
+        crate::trace::sql(item.ticket);
         let result = run_operation(&conn, &item.operation);
         drop(conn);
+        let rows = match &result {
+            AsyncResult::Query { rows } => rows.len(),
+            AsyncResult::QueryRaw { rows, .. } => rows.len(),
+            _ => 0,
+        };
+        crate::trace::ready(item.ticket, rows);
 
         // On failure, poison the handle
         if matches!(result, AsyncResult::Error { .. }) {
@@ -202,6 +211,8 @@ pub fn submit(handle_id: usize, conn: Handle, operation: AsyncOp) -> Result<u64,
     }
 
     let ticket = NEXT_TICKET.fetch_add(1, Ordering::Relaxed);
+    let sql = match &operation { AsyncOp::Execute(s) | AsyncOp::Query(s) | AsyncOp::QueryRaw(s) => s };
+    crate::trace::submit(ticket, handle_id, sql);
     let item = WorkItem {
         ticket,
         handle_id,
@@ -215,7 +226,9 @@ pub fn submit(handle_id: usize, conn: Handle, operation: AsyncOp) -> Result<u64,
 /// Retrieve a completed result. Returns None if still pending.
 /// One-shot: the result is removed from the map on retrieval.
 pub fn get_result(ticket: u64) -> Option<AsyncResult> {
-    RESULTS.lock().unwrap().remove(&ticket)
+    let result = RESULTS.lock().unwrap().remove(&ticket);
+    if result.is_some() { crate::trace::finish(ticket, "polled"); }
+    result
 }
 
 /// Clear poison for a specific handle (called after addon retrieves the failure).
@@ -239,25 +252,18 @@ pub fn register_callback(ticket: u64, lua_ref: i32, cb_type: CallbackType, handl
     CALLBACKS.lock().unwrap().insert(ticket, PendingCallback { lua_ref, cb_type, handle_id });
 }
 
-/// Returns all tickets that have both a completed result and a registered callback.
-pub fn ready_callbacks() -> Vec<(u64, AsyncResult, PendingCallback)> {
+/// Take only the oldest completed callback, leaving the others native-side.
+pub fn take_ready_callback() -> Option<(u64, AsyncResult, PendingCallback)> {
     let mut results = RESULTS.lock().unwrap();
     let mut callbacks = CALLBACKS.lock().unwrap();
-    let tickets: Vec<u64> = callbacks.keys()
-        .filter(|t| results.contains_key(t))
-        .copied()
-        .collect();
-    let mut ready = Vec::new();
-    for ticket in tickets {
-        if let (Some(result), Some(cb)) = (results.remove(&ticket), callbacks.remove(&ticket)) {
-            ready.push((ticket, result, cb));
-        }
-    }
-    ready
+    let ticket = callbacks.keys().filter(|t| results.contains_key(t)).min().copied()?;
+    crate::trace::delivery(ticket);
+    Some((ticket, results.remove(&ticket)?, callbacks.remove(&ticket)?))
 }
 
 /// Remove all callbacks for a specific handle. Returns the Lua refs to release.
 pub fn cancel_handle_callbacks(handle_id: usize) -> Vec<i32> {
+    crate::trace::cancel(Some(handle_id));
     let mut callbacks = CALLBACKS.lock().unwrap();
     let mut refs = Vec::new();
     callbacks.retain(|_, cb| {
@@ -275,6 +281,7 @@ pub fn cancel_handle_callbacks(handle_id: usize) -> Vec<i32> {
 /// Called on UI reload to prevent stale data from leaking across sessions.
 /// Returns the Lua refs from any stale callbacks so the caller can release them.
 pub fn reset() -> Vec<i32> {
+    crate::trace::reset();
     RESULTS.lock().unwrap().clear();
     POISONED.lock().unwrap().clear();
     let stale_refs: Vec<i32> = CALLBACKS.lock().unwrap()
