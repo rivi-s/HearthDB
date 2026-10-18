@@ -410,3 +410,10 @@ Build Tools), no further configuration is needed:
 ```cmd
 cargo build --release --target i686-pc-windows-msvc
 ```
+
+## Optional hitch profiler
+
+The separately installed [pfQuest-HDB Hitch Profiler](diagnostics/pfQuest-HDB-HitchProfiler/README.md)
+is maintained under diagnostics/. Download its ZIP from the experimental release
+assets. Profiler 1.0.1 adds saved per-character `/hdbhitch login on` and
+`/hdbhitch login off` settings. It is not required for the DLL or normal play.
